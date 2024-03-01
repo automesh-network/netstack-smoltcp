@@ -1,0 +1,26 @@
+[package]
+name = "netstack-smoltcp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
+tokio-util = "0.7.10"
+etherparse ="0.13"
+futures = "0.3"
+rand = "0.8"
+spin = "0.9"
+smoltcp = { version = "0.11", default-features = false, features = [
+    "std",
+    "log",
+    "medium-ip",
+    "proto-ipv4",
+    "proto-ipv6",
+    "socket-icmp",
+    "socket-udp",
+    "socket-tcp",
+] }
+
+[dev-dependencies]
+tun = { version = "0.6", features = ["async"] }
