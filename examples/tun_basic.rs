@@ -33,7 +33,9 @@ fn main() {
     let device = tun::create_as_async(&cfg).unwrap();
     let mut builder = StackBuilder::default();
     if let Some(device_broadcast) = get_device_broadcast(&device) {
-        builder = builder.add_v4_filter(move |v4| *v4 == device_broadcast);
+        builder = builder
+            .add_src_v4_filter(move |v4| *v4 == device_broadcast)
+            .add_dst_v4_filter(move |v4| *v4 == device_broadcast);
     }
     let (udp_socket, tcp_listener, stack) = builder.run();
 

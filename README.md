@@ -4,7 +4,7 @@ A netstack for the special purpose of turning packets from/to a TUN interface in
 
 ## Example
 ```rust
-use rust_tun::{self as tun, Device, TunPacket};
+use tun::{Device, TunPacket};
 // let device = tun::create_as_async(&cfg)?;
 // let framed = device.into_framed();
 

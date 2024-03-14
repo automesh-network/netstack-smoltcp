@@ -12,13 +12,13 @@ impl<'a> Default for Filters<'a> {
     fn default() -> Self {
         Self::new(
             vec![
-                Box::new(|v4| v4.is_broadcast()),
-                Box::new(|v4| v4.is_multicast()),
-                Box::new(|v4| v4.is_unspecified()),
+                Box::new(|v4| !v4.is_broadcast()),
+                Box::new(|v4| !v4.is_multicast()),
+                Box::new(|v4| !v4.is_unspecified()),
             ],
             vec![
-                Box::new(|v6| v6.is_multicast()),
-                Box::new(|v6| v6.is_unspecified()),
+                Box::new(|v6| !v6.is_multicast()),
+                Box::new(|v6| !v6.is_unspecified()),
             ],
         )
     }
@@ -36,20 +36,20 @@ impl<'a> Filters<'a> {
         match addr {
             IpAddr::V4(v4) => {
                 for filter in &self.ipv4_filters {
-                    if filter(v4) {
-                        return true;
+                    if !filter(v4) {
+                        return false;
                     }
                 }
             }
             IpAddr::V6(v6) => {
                 for filter in &self.ipv6_filters {
-                    if filter(v6) {
-                        return true;
+                    if !filter(v6) {
+                        return false;
                     }
                 }
             }
         }
-        false
+        true
     }
 
     #[allow(unused)]
