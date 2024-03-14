@@ -16,7 +16,8 @@ pub struct StackBuilder {
     stack_buffer_size: usize,
     udp_buffer_size: usize,
     tcp_buffer_size: usize,
-    filters: Filters<'static>,
+    src_filters: Filters<'static>,
+    dst_filters: Filters<'static>,
 }
 
 impl Default for StackBuilder {
@@ -25,7 +26,8 @@ impl Default for StackBuilder {
             stack_buffer_size: 1024,
             udp_buffer_size: 256,
             tcp_buffer_size: 512,
-            filters: Default::default(),
+            src_filters: Default::default(),
+            dst_filters: Default::default(),
         }
     }
 }
@@ -47,19 +49,35 @@ impl StackBuilder {
         self
     }
 
-    pub fn add_v4_filter<F>(mut self, filter: F) -> Self
+    pub fn add_src_v4_filter<F>(mut self, filter: F) -> Self
     where
         F: Fn(&Ipv4Addr) -> bool + Send + Sync + 'static,
     {
-        self.filters.add_v4(Box::new(filter));
+        self.src_filters.add_v4(Box::new(filter));
         self
     }
 
-    pub fn add_v6_filter<F>(mut self, filter: F) -> Self
+    pub fn add_dst_v4_filter<F>(mut self, filter: F) -> Self
+    where
+        F: Fn(&Ipv4Addr) -> bool + Send + Sync + 'static,
+    {
+        self.dst_filters.add_v4(Box::new(filter));
+        self
+    }
+
+    pub fn add_src_v6_filter<F>(mut self, filter: F) -> Self
     where
         F: Fn(&Ipv6Addr) -> bool + Send + Sync + 'static,
     {
-        self.filters.add_v6(Box::new(filter));
+        self.src_filters.add_v6(Box::new(filter));
+        self
+    }
+
+    pub fn add_dst_v6_filter<F>(mut self, filter: F) -> Self
+    where
+        F: Fn(&Ipv6Addr) -> bool + Send + Sync + 'static,
+    {
+        self.dst_filters.add_v6(Box::new(filter));
         self
     }
 
@@ -71,7 +89,8 @@ impl StackBuilder {
         let udp_socket = UdpSocket::new(udp_rx, stack_tx.clone());
         let (tcp_runner, tcp_listener) = TcpListener::new(tcp_rx, stack_tx);
         let stack = Stack {
-            filters: self.filters,
+            src_filters: self.src_filters,
+            dst_filters: self.dst_filters,
             sink_buf: None,
             stack_rx,
             udp_tx,
@@ -95,7 +114,8 @@ impl StackBuilder {
 }
 
 pub struct Stack {
-    filters: Filters<'static>,
+    src_filters: Filters<'static>,
+    dst_filters: Filters<'static>,
     sink_buf: Option<AnyIpPktFrame>,
     udp_tx: Sender<AnyIpPktFrame>,
     tcp_tx: Sender<AnyIpPktFrame>,
@@ -154,16 +174,16 @@ impl Sink<AnyIpPktFrame> for Stack {
         let src_ip = packet.src_addr();
         let dst_ip = packet.dst_addr();
 
-        let src_non_unicast = self.filters.is_allowed(&src_ip);
-        let dst_non_unicast = self.filters.is_allowed(&dst_ip);
+        let src_allowed = self.src_filters.is_allowed(&src_ip);
+        let dst_allowed = self.dst_filters.is_allowed(&dst_ip);
 
-        if src_non_unicast || dst_non_unicast {
+        if !(src_allowed && dst_allowed) {
             trace!(
-                "IP packet {} (unicast? {}) -> {} (unicast? {}) throwing away",
+                "IP packet {} (allowed? {}) -> {} (allowed? {}) throwing away",
                 src_ip,
-                !src_non_unicast,
+                src_allowed,
                 dst_ip,
-                !dst_non_unicast
+                dst_allowed,
             );
             return Poll::Ready(Ok(()));
         }
