@@ -1,8 +1,20 @@
+use std::net::SocketAddr;
+
 use futures::{SinkExt, StreamExt};
 use netstack_smoltcp::{self, StackBuilder, TcpListener, UdpSocket};
+use tokio::net::{TcpSocket, TcpStream};
+use tracing::{debug, warn};
 use tun::{Device, TunPacket};
 
-fn main() {
+#[tokio::main]
+async fn main() {
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::TRACE)
+            .finish(),
+    )
+    .unwrap();
+
     let mut cfg = tun::Configuration::default();
     cfg.layer(tun::Layer::L3);
     #[cfg(target_os = "linux")]
@@ -44,43 +56,104 @@ fn main() {
     let (mut stack_sink, mut stack_stream) = stack.split();
 
     // Reads packet from stack and sends to TUN.
-    tokio::spawn(async move {
+    let f1 = tokio::spawn(async move {
         while let Some(pkt) = stack_stream.next().await {
             if let Ok(pkt) = pkt {
-                tun_sink.send(TunPacket::new(pkt)).await.unwrap();
+                match tun_sink.send(TunPacket::new(pkt)).await {
+                    Ok(_) => {}
+                    Err(e) => warn!("failed to send packet to TUN, err: {:?}", e),
+                }
             }
         }
     });
 
     // Reads packet from TUN and sends to stack.
-    tokio::spawn(async move {
+    let f2 = tokio::spawn(async move {
         while let Some(pkt) = tun_stream.next().await {
             if let Ok(pkt) = pkt {
-                stack_sink.send(pkt.into_bytes().into()).await.unwrap();
+                match stack_sink.send(pkt.into_bytes().into()).await {
+                    Ok(_) => {}
+                    Err(e) => warn!("failed to send packet to stack, err: {:?}", e),
+                };
             }
         }
     });
 
     // Extracts TCP connections from stack and sends them to the dispatcher.
-    tokio::spawn(async move {
+    let f3 = tokio::spawn(async move {
         handle_inbound_stream(tcp_listener).await;
     });
 
     // Receive and send UDP packets between netstack and NAT manager. The NAT
     // manager would maintain UDP sessions and send them to the dispatcher.
-    tokio::spawn(async move {
+    let f4 = tokio::spawn(async move {
         handle_inbound_datagram(udp_socket).await;
     });
+
+    let res = futures::future::join_all(vec![f1, f2, f3, f4]).await;
+    for r in res {
+        if let Err(e) = r {
+            eprintln!("error: {:?}", e);
+        }
+    }
 }
 
-async fn handle_inbound_stream(_tcp_listener: TcpListener) {
+// simply forward
+async fn handle_inbound_stream(mut tcp_listener: TcpListener) {
+    loop {
+        while let Some((mut stream, local, remote)) = tcp_listener.next().await {
+            println!("new tcp connection: {:?} => {:?}", local, remote);
+            let mut remote = new_tcp_stream(remote, "wlo1").await.unwrap();
+            match tokio::io::copy_bidirectional(&mut stream, &mut remote).await {
+                Ok(_) => {}
+                Err(e) => warn!(
+                    "failed to copy tcp stream {:?}=>{:?}, err: {:?}",
+                    local, remote, e
+                ),
+            }
+        }
+    }
     /* TODO */
 }
 
-async fn handle_inbound_datagram(_udp_socket: UdpSocket) {
+async fn handle_inbound_datagram(mut udp_socket: UdpSocket) {
+    let mut recv_buf = vec![0; 1024 * 64];
+    loop {
+        while let Some((data, src, dst)) = udp_socket.next().await {
+            if dst != "1.1.1.1:53".parse().unwrap() {
+                continue;
+            }
+            println!("new udp packet: {:?} => {:?}", src, dst);
+            let interface = Some("wlo1");
+            let outbound = new_udp_packet(interface).await.unwrap();
+            match outbound.send_to(&data, dst).await {
+                Ok(_) => {}
+                Err(e) => {
+                    warn!(
+                        "failed to send udp packet to outbound, src: {:?}, dst: {:?}, err:{:?}",
+                        src, dst, e
+                    );
+                    continue;
+                }
+            };
+            let res = outbound.recv(&mut recv_buf).await.unwrap();
+            debug!("recv {:?} <= {:?}, packet size:{}", src, dst, res);
+            match udp_socket.send((recv_buf[..res].to_vec(), dst, src)).await {
+                Ok(_) => {}
+                Err(e) => {
+                    warn!(
+                        "failed to send udp packet to stack, src: {:?}, dst: {:?}, err:{:?}",
+                        src, dst, e
+                    );
+                    continue;
+                }
+            }
+        }
+    }
     /* TODO */
 }
 
+#[allow(unused)]
 fn get_device_broadcast(device: &tun::AsyncDevice) -> Option<std::net::Ipv4Addr> {
     let mtu = device.get_ref().mtu().unwrap_or(1500);
 
@@ -126,4 +199,29 @@ fn get_device_broadcast(device: &tun::AsyncDevice) -> Option<std::net::Ipv4Addr>
             None
         }
     }
+}
+
+pub async fn new_tcp_stream<'a>(addr: SocketAddr, iface: &str) -> std::io::Result<TcpStream> {
+    let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None)?;
+
+    socket.bind_device(Some(iface.as_bytes()))?;
+    socket.set_keepalive(true)?;
+    socket.set_nodelay(true)?;
+    socket.set_nonblocking(true)?;
+
+    let stream = TcpSocket::from_std_stream(socket.into())
+        .connect(addr)
+        .await?;
+
+    Ok(stream)
+}
+
+pub async fn new_udp_packet(iface: Option<&str>) -> std::io::Result<tokio::net::UdpSocket> {
+    let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None)?;
+    if let Some(iface) = iface {
+        socket.bind_device(Some(iface.as_bytes()))?;
+    }
+    socket.set_nonblocking(true)?;
+
+    tokio::net::UdpSocket::from_std(socket.into())
 }

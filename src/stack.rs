@@ -113,6 +113,7 @@ impl StackBuilder {
     }
 }
 
+#[allow(unused)]
 pub struct Stack {
     src_filters: Filters<'static>,
     dst_filters: Filters<'static>,
