@@ -175,8 +175,8 @@ impl Sink<AnyIpPktFrame> for Stack {
         let src_ip = packet.src_addr();
         let dst_ip = packet.dst_addr();
 
-        let src_allowed = self.src_filters.is_allowed(&src_ip);
-        let dst_allowed = self.dst_filters.is_allowed(&dst_ip);
+        let src_allowed = true;
+        let dst_allowed = true;
 
         if !(src_allowed && dst_allowed) {
             trace!(

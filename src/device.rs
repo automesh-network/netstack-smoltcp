@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use smoltcp::{
-    phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
+    phy::{Checksum, ChecksumCapabilities, Device, DeviceCapabilities, Medium, RxToken, TxToken},
     time::Instant,
 };
 use tokio::sync::mpsc::{unbounded_channel, Permit, Sender, UnboundedReceiver, UnboundedSender};
@@ -64,6 +64,10 @@ impl Device for VirtualDevice {
         let mut capabilities = DeviceCapabilities::default();
         capabilities.medium = Medium::Ip;
         capabilities.max_transmission_unit = 1504;
+        capabilities.checksum = ChecksumCapabilities::ignored();
+        capabilities.checksum.tcp = Checksum::Tx;
+        capabilities.checksum.udp = Checksum::None;
+        capabilities.checksum.ipv4 = Checksum::Tx;
         capabilities
     }
 }
