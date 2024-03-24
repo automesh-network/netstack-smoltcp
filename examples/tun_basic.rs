@@ -6,6 +6,12 @@ use tokio::net::{TcpSocket, TcpStream};
 use tracing::{debug, warn};
 use tun::{Device, TunPacket};
 
+
+// to run this example, you should set the policy routing **after the start of the main program**
+// the rules can be:
+// `ip rule add to 1.1.1.1 table 200`
+// `ip route add default dev utun8 table 200`
+
 #[tokio::main]
 async fn main() {
     tracing::subscriber::set_global_default(

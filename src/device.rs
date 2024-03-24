@@ -65,7 +65,9 @@ impl Device for VirtualDevice {
         capabilities.medium = Medium::Ip;
         capabilities.max_transmission_unit = 1504;
         capabilities.checksum = ChecksumCapabilities::ignored();
+        // for udp, the tx checksum is required, since the egress tcp packet will be checked by the system stack
         capabilities.checksum.tcp = Checksum::Tx;
+        // i don't know why exactly the udp checksum can be ignored, but according to my test, it just work
         capabilities.checksum.udp = Checksum::None;
         capabilities.checksum.ipv4 = Checksum::Tx;
         capabilities
