@@ -3,15 +3,15 @@ use std::net::SocketAddr;
 use futures::{SinkExt, StreamExt};
 use netstack_smoltcp::{self, StackBuilder, TcpListener, UdpSocket};
 use tokio::net::{TcpSocket, TcpStream};
-use tracing::{debug, warn};
+use tracing::warn;
 use tun::{Device, TunPacket};
-
 
 // to run this example, you should set the policy routing **after the start of the main program**
 // the rules can be:
 // `ip rule add to 1.1.1.1 table 200`
 // `ip route add default dev utun8 table 200`
-// `curl 1.1.1.1` or `dig @1.1.1.1 google.com`
+// `curl 1.1.1.1` or or run the netperf(https://github.com/ahmedsoliman/netperf) test of tcp stream
+// currently, the example only supports the TCP stream, and the UDP packet will be dropped.
 
 #[tokio::main]
 async fn main() {
@@ -100,7 +100,7 @@ async fn main() {
     let res = futures::future::join_all(vec![f1, f2, f3, f4]).await;
     for r in res {
         if let Err(e) = r {
-            eprintln!("error: {:?}", e);
+            tracing::error!("error: {:?}", e);
         }
     }
 }
@@ -109,53 +109,33 @@ async fn main() {
 async fn handle_inbound_stream(mut tcp_listener: TcpListener) {
     loop {
         while let Some((mut stream, local, remote)) = tcp_listener.next().await {
-            println!("new tcp connection: {:?} => {:?}", local, remote);
-            let mut remote = new_tcp_stream(remote, "wlo1").await.unwrap();
-            match tokio::io::copy_bidirectional(&mut stream, &mut remote).await {
-                Ok(_) => {}
-                Err(e) => warn!(
-                    "failed to copy tcp stream {:?}=>{:?}, err: {:?}",
-                    local, remote, e
-                ),
-            }
+            tokio::spawn(async move {
+                println!("new tcp connection: {:?} => {:?}", local, remote);
+                if let Ok(mut remote) = new_tcp_stream(remote, "wlo1").await {
+                    match tokio::io::copy_bidirectional(&mut stream, &mut remote).await {
+                        Ok(_) => {}
+                        Err(e) => warn!(
+                            "failed to copy tcp stream {:?}=>{:?}, err: {:?}",
+                            local, remote, e
+                        ),
+                    }
+                }
+            });
         }
     }
-    /* TODO */
 }
-
 async fn handle_inbound_datagram(mut udp_socket: UdpSocket) {
-    let mut recv_buf = vec![0; 1024 * 64];
     loop {
-        while let Some((data, src, dst)) = udp_socket.next().await {
-            if dst != "1.1.1.1:53".parse().unwrap() {
+        let n = udp_socket.next().await;
+        let (_data, src, dst) = match n {
+            Some((data, src, dst)) => (data, src, dst),
+            None => {
+                warn!("failed to get udp packet");
                 continue;
             }
-            println!("new udp packet: {:?} => {:?}", src, dst);
-            let interface = Some("wlo1");
-            let outbound = new_udp_packet(interface).await.unwrap();
-            match outbound.send_to(&data, dst).await {
-                Ok(_) => {}
-                Err(e) => {
-                    warn!(
-                        "failed to send udp packet to outbound, src: {:?}, dst: {:?}, err:{:?}",
-                        src, dst, e
-                    );
-                    continue;
-                }
-            };
-            let res = outbound.recv(&mut recv_buf).await.unwrap();
-            debug!("recv {:?} <= {:?}, packet size:{}", src, dst, res);
-            match udp_socket.send((recv_buf[..res].to_vec(), dst, src)).await {
-                Ok(_) => {}
-                Err(e) => {
-                    warn!(
-                        "failed to send udp packet to stack, src: {:?}, dst: {:?}, err:{:?}",
-                        src, dst, e
-                    );
-                    continue;
-                }
-            }
-        }
+        };
+
+        tracing::warn!("dropping packet from {:?} to {:?}", src, dst);
     }
     /* TODO */
 }

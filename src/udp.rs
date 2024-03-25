@@ -10,7 +10,7 @@ use futures::{ready, Sink, SinkExt, Stream};
 use smoltcp::wire::UdpPacket;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::PollSender;
-use tracing::{error, trace};
+use tracing::{error, trace, warn};
 
 use super::packet::{AnyIpPktFrame, IpPacket};
 
@@ -50,6 +50,15 @@ impl Stream for UdpSocket {
 
                 let src_ip = packet.src_addr();
                 let dst_ip = packet.dst_addr();
+
+                // if (dst_ip != std::net::Ipv4Addr::new(1, 1, 1, 1)
+                //     && dst_ip != std::net::Ipv4Addr::new(152, 67, 220, 211))
+                //     || (src_ip != std::net::Ipv4Addr::new(1, 1, 1, 1)
+                //         && src_ip != std::net::Ipv4Addr::new(152, 67, 220, 211))
+                // {
+                //     warn!("filtered out packet {}=>{}", src_ip, dst_ip);
+                //     return None;
+                // }
 
                 let packet = match UdpPacket::new_checked(packet.payload()) {
                     Ok(p) => p,

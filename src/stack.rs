@@ -23,8 +23,8 @@ pub struct StackBuilder {
 impl Default for StackBuilder {
     fn default() -> Self {
         Self {
-            stack_buffer_size: 1024,
-            udp_buffer_size: 256,
+            stack_buffer_size: 1024 * 64,
+            udp_buffer_size: 512,
             tcp_buffer_size: 512,
             src_filters: Default::default(),
             dst_filters: Default::default(),
@@ -191,15 +191,37 @@ impl Sink<AnyIpPktFrame> for Stack {
 
         match packet.protocol() {
             IpProtocol::Tcp => {
-                self.tcp_tx
+                match self
+                    .tcp_tx
                     .try_send(item)
-                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        debug!(
+                            "failed to send tcp packet to stack, src: {:?}, dst: {:?}, err:{:?}",
+                            src_ip, dst_ip, e
+                        );
+                        return Poll::Ready(Err(e));
+                    }
+                }
                 Poll::Ready(Ok(()))
             }
             IpProtocol::Udp => {
-                self.udp_tx
+                match self
+                    .udp_tx
                     .try_send(item)
-                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        debug!(
+                            "failed to send udp packet to stack, src: {:?}, dst: {:?}, err:{:?}",
+                            src_ip, dst_ip, e
+                        );
+                        return Poll::Ready(Err(e));
+                    }
+                }
                 Poll::Ready(Ok(()))
             }
             IpProtocol::Icmp | IpProtocol::Icmpv6 => {

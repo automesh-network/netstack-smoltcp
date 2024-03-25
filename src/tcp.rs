@@ -524,6 +524,7 @@ impl AsyncWrite for TcpStream {
         }
 
         let n = control.send_buffer.enqueue_slice(buf);
+        tracing::warn!("poll write n: {}", n);
 
         if n > 0 {
             self.notify.notify_one();
@@ -545,6 +546,8 @@ impl AsyncWrite for TcpStream {
 
         // SHUT_WR
         if matches!(control.send_state, TcpSocketState::Normal) {
+            tracing::warn!("poll_shutdown, SHUT_WR");
+            // panic!("shutdown");
             control.send_state = TcpSocketState::Close;
         }
 
