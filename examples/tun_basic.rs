@@ -11,6 +11,7 @@ use tun::{Device, TunPacket};
 // the rules can be:
 // `ip rule add to 1.1.1.1 table 200`
 // `ip route add default dev utun8 table 200`
+// `curl 1.1.1.1` or `dig @1.1.1.1 google.com`
 
 #[tokio::main]
 async fn main() {
