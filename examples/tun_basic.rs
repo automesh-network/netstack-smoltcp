@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use futures::{SinkExt, StreamExt};
-use netstack_smoltcp::{self, StackBuilder, TcpListener, UdpSocket};
+use netstack_smoltcp::{StackBuilder, TcpListener, UdpSocket};
 use tokio::net::{TcpSocket, TcpStream};
 use tracing::warn;
 use tun::{Device, TunPacket};
