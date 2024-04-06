@@ -6,15 +6,27 @@ use tokio::net::{TcpSocket, TcpStream};
 use tracing::warn;
 use tun::{Device, TunPacket};
 
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+#[structopt(name = "example", about = "An example of StructOpt usage.")]
+struct Opt {
+    #[structopt(short = "i", long = "interface")]
+    interface: String,
+}
+
 // to run this example, you should set the policy routing **after the start of the main program**
-// the rules can be:
-// `ip rule add to 1.1.1.1 table 200`
-// `ip route add default dev utun8 table 200`
-// `curl 1.1.1.1` or or run the netperf(https://github.com/ahmedsoliman/netperf) test of tcp stream
+// the cmds can be:
+// 1. `cargo run --example proxy --features default -- --interface wlo1`
+// 2. `ip rule add to 1.1.1.1 table 200`
+// 3. `ip route add default dev utun8 table 200`
+// 4. `curl 1.1.1.1` or or run the netperf(https://github.com/ahmedsoliman/netperf) test of tcp stream
 // currently, the example only supports the TCP stream, and the UDP packet will be dropped.
 
 #[tokio::main]
 async fn main() {
+    let opt = Opt::from_args();
+
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
             .with_max_level(tracing::Level::TRACE)
@@ -88,7 +100,7 @@ async fn main() {
 
     // Extracts TCP connections from stack and sends them to the dispatcher.
     let f3 = tokio::spawn(async move {
-        handle_inbound_stream(tcp_listener).await;
+        handle_inbound_stream(tcp_listener, &opt.interface).await;
     });
 
     // Receive and send UDP packets between netstack and NAT manager. The NAT
@@ -106,12 +118,13 @@ async fn main() {
 }
 
 // simply forward
-async fn handle_inbound_stream(mut tcp_listener: TcpListener) {
+async fn handle_inbound_stream(mut tcp_listener: TcpListener, interface: &str) {
     loop {
         while let Some((mut stream, local, remote)) = tcp_listener.next().await {
+            let interface = interface.to_owned();
             tokio::spawn(async move {
                 println!("new tcp connection: {:?} => {:?}", local, remote);
-                if let Ok(mut remote) = new_tcp_stream(remote, "wlo1").await {
+                if let Ok(mut remote) = new_tcp_stream(remote, &interface).await {
                     match tokio::io::copy_bidirectional(&mut stream, &mut remote).await {
                         Ok(_) => {}
                         Err(e) => warn!(
