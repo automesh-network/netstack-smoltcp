@@ -23,7 +23,7 @@ struct Opt {
 // 4. `curl 1.1.1.1` or or run the netperf(https://github.com/ahmedsoliman/netperf) test of tcp stream
 // currently, the example only supports the TCP stream, and the UDP packet will be dropped.
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     let opt = Opt::from_args();
 
