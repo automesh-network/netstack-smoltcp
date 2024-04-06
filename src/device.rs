@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use smoltcp::{
-    phy::{ChecksumCapabilities, Device, DeviceCapabilities, Medium, RxToken, TxToken},
+    phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
     time::Instant,
 };
 use tokio::sync::mpsc::{unbounded_channel, Permit, Sender, UnboundedReceiver, UnboundedSender};
@@ -66,12 +66,13 @@ impl Device for VirtualDevice {
         capabilities.max_transmission_unit = 1504;
         #[cfg(feature = "offload")]
         {
+            use smoltcp::phy::{Checksum, ChecksumCapabilities};
             capabilities.checksum = ChecksumCapabilities::ignored();
             // for udp, the tx checksum is required, since the egress tcp packet will be checked by the system stack
-            capabilities.checksum.tcp = smoltcp::phy::Checksum::Tx;
+            capabilities.checksum.tcp = Checksum::Tx;
             // i don't know why exactly the udp checksum can be ignored, but according to my test, it just work
-            capabilities.checksum.udp = smoltcp::phy::Checksum::None;
-            capabilities.checksum.ipv4 = smoltcp::phy::Checksum::Tx;
+            capabilities.checksum.udp = Checksum::None;
+            capabilities.checksum.ipv4 = Checksum::Tx;
         }
         capabilities
     }
