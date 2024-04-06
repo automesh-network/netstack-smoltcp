@@ -64,9 +64,9 @@ impl Device for VirtualDevice {
         let mut capabilities = DeviceCapabilities::default();
         capabilities.medium = Medium::Ip;
         capabilities.max_transmission_unit = 1504;
-        capabilities.checksum = ChecksumCapabilities::ignored();
         #[cfg(feature = "offload")]
         {
+            capabilities.checksum = ChecksumCapabilities::ignored();
             // for udp, the tx checksum is required, since the egress tcp packet will be checked by the system stack
             capabilities.checksum.tcp = smoltcp::phy::Checksum::Tx;
             // i don't know why exactly the udp checksum can be ignored, but according to my test, it just work
