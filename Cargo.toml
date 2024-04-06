@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tracing = { version = "0.1", default-features = false, features = ["std"] }
+tracing = { version = "0.1", default-features = false, features = ["std", "max_level_debug", "release_max_level_off"] }
 tokio = { version = "1", features = ["sync", "time", "rt", "macros", "rt-multi-thread", "io-util"] }
 tokio-util = "0.7.10"
 etherparse ="0.13"
