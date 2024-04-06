@@ -104,12 +104,29 @@ the `htop` shows that, when running our proxy based on tun&smoltcp, the avarage 
 
 ```
 
+### flamegraphs
+
+#### Prerequisites
+
+``
+
+#### run
+
+replace the command: `cargo run --release --example proxy --features default -- --interface wlo1 > /tmp/smoltcp.log`  
+with the new one: `cargo flamegraph --release --example proxy --features default -- --interface wlo1 > /tmp/smoltcp.log`
+
+
+#### results
+
+1. client1->server: see [results1](./flamegraphs/client1)
+2. client2->server: see [results2](./flamegraphs/client2)
+
 ### conslusions
 
 1. `netstack-smoltcp` is better than `netstack-lwip`, it's performances in high CPU workload situations are more desirable; on the platform that both netstack crate is supported, you should always consider `netstack-smoltcp`
 2. the checksum offload **CANNOT** lead to a huge leap in iperf throughput, but in the debug version(not listed), the difference is noticable, i guess that's because the debug version of binary file contains more instructions, so the CPU becomes a bottleneck, and the checksum offload of TUN can alleviate this issue
 
+### Thanks
 
-### TODOs
-
-- flamegraph analyze 
+- [cargo-flamegraph](https://github.com/flamegraph-rs/flamegraph)
+- [iperf](https://github.com/esnet/iperf)
