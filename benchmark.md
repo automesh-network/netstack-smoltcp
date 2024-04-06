@@ -155,6 +155,35 @@ Connecting to host 10.0.0.11, port 5201
 [  5]  11.00-12.00  sec   101 MBytes   849 Mbits/sec    0    676 KBytes
 ```
 
+#### smoltcp single thread wo/ offload
+
+CPU usage
+```
+  PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+25773 root      20   0 1089488   7624   3100 S  26.9   0.0   0:09.55 proxy
+```
+
+```
+➜  ~ iperf3 -c 10.0.0.11 -t 60
+Connecting to host 10.0.0.11, port 5201
+[  5] local 10.10.10.2 port 41298 connected to 10.0.0.11 port 5201
+[ ID] Interval           Transfer     Bitrate         Retr  Cwnd
+[  5]   0.00-1.00   sec   116 MBytes   974 Mbits/sec    0    662 KBytes
+[  5]   1.00-2.00   sec   111 MBytes   933 Mbits/sec    0    662 KBytes
+[  5]   2.00-3.00   sec   112 MBytes   944 Mbits/sec    0    662 KBytes
+[  5]   3.00-4.00   sec   112 MBytes   944 Mbits/sec    0    662 KBytes
+[  5]   4.00-5.00   sec   111 MBytes   933 Mbits/sec    0    662 KBytes
+[  5]   5.00-6.00   sec   111 MBytes   933 Mbits/sec    0    662 KBytes
+[  5]   6.00-7.00   sec   110 MBytes   923 Mbits/sec    0    662 KBytes
+[  5]   7.00-8.00   sec   111 MBytes   933 Mbits/sec    0    662 KBytes
+[  5]   8.00-9.00   sec   112 MBytes   944 Mbits/sec    0    662 KBytes
+[  5]   9.00-10.00  sec   111 MBytes   933 Mbits/sec    0    662 KBytes
+[  5]  10.00-11.00  sec   112 MBytes   944 Mbits/sec    0    662 KBytes
+[  5]  11.00-12.00  sec   111 MBytes   933 Mbits/sec    0    662 KBytes
+[  5]  12.00-13.00  sec   112 MBytes   944 Mbits/sec    0    662 KBytes
+[  5]  13.00-14.00  sec   111 MBytes   933 Mbits/sec    0    662 KBytes
+```
+
 #### smoltcp w offload
 
 CPU usage
