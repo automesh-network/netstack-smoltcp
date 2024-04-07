@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use futures::{SinkExt, StreamExt};
 use netstack_lwip::{NetStack, TcpListener, UdpSocket};
-use tokio::net::{TcpSocket, TcpStream};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::warn;
 use tun::{Device, TunPacket};
 
@@ -114,16 +114,16 @@ async fn main() {
 // simply forward
 async fn handle_inbound_stream(mut tcp_listener: TcpListener, interface: &str) {
     loop {
-        while let Some((mut stream, local, remote)) = tcp_listener.next().await {
+        while let Some((mut stream, local_addr, remote_addr)) = tcp_listener.next().await {
             let interface = interface.to_owned();
             tokio::spawn(async move {
-                println!("new tcp connection: {:?} => {:?}", local, remote);
-                if let Ok(mut remote) = new_tcp_stream(remote, &interface).await {
+                println!("new tcp connection: {:?} => {:?}", local_addr, remote_addr);
+                if let Ok(mut remote) = new_tcp_stream(remote_addr, &interface).await {
                     match tokio::io::copy_bidirectional(&mut stream, &mut remote).await {
                         Ok(_) => {}
                         Err(e) => warn!(
                             "failed to copy tcp stream {:?}=>{:?}, err: {:?}",
-                            local, remote, e
+                            local_addr, remote_addr, e
                         ),
                     }
                 }
@@ -195,27 +195,29 @@ fn get_device_broadcast(device: &tun::AsyncDevice) -> Option<std::net::Ipv4Addr>
     }
 }
 
-pub async fn new_tcp_stream<'a>(addr: SocketAddr, iface: &str) -> std::io::Result<TcpStream> {
-    let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None)?;
+pub trait ProxyStream: AsyncRead + AsyncWrite + Send + Unpin {}
+impl<T> ProxyStream for T where T: AsyncRead + AsyncWrite + Send + Unpin {}
+pub type AnyStream = Box<dyn ProxyStream>;
 
-    socket.bind_device(Some(iface.as_bytes()))?;
-    socket.set_keepalive(true)?;
-    socket.set_nodelay(true)?;
-    socket.set_nonblocking(true)?;
+pub async fn new_tcp_stream(addr: SocketAddr, iface: &str) -> std::io::Result<AnyStream> {
+    use shadowsocks::net::*;
+    let mut opts: ConnectOpts = ConnectOpts::default();
+    opts.bind_interface = Some(iface.to_owned());
 
-    let stream = TcpSocket::from_std_stream(socket.into())
-        .connect(addr)
-        .await?;
-
-    Ok(stream)
+    shadowsocks::net::TcpStream::connect_with_opts(&addr, &opts)
+        .await
+        .map(|x| Box::new(x) as _)
 }
 
-pub async fn new_udp_packet(iface: Option<&str>) -> std::io::Result<tokio::net::UdpSocket> {
-    let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None)?;
-    if let Some(iface) = iface {
-        socket.bind_device(Some(iface.as_bytes()))?;
-    }
-    socket.set_nonblocking(true)?;
+pub async fn new_udp_packet(
+    addr: &SocketAddr,
+    iface: &str,
+) -> std::io::Result<tokio::net::UdpSocket> {
+    use shadowsocks::net::*;
+    let mut opts = ConnectOpts::default();
+    opts.bind_interface = Some(iface.to_owned());
 
-    tokio::net::UdpSocket::from_std(socket.into())
+    shadowsocks::net::UdpSocket::connect_with_opts(addr, &opts)
+        .await
+        .map(|x| x.into())
 }

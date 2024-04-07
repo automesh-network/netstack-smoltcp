@@ -32,3 +32,4 @@ offload = []
 tun = { version = "0.6", features = ["async"] }
 netstack-lwip = { git = "https://github.com/Watfaq/netstack-lwip.git", rev = "2817bf82740e04bbee6b7bf1165f55657a6ed163" }
 structopt = "0.3"
+shadowsocks = "1.18"
