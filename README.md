@@ -46,6 +46,34 @@ tokio::spawn(async move {
 });
 ```
 
+## examples
+
+the example `proxy` uses our crate - `netstack-smoltcp` as the userspace implementation, you can run it via 
+
+1. `sudo cargo run --example proxy -- --interface /your/if/name` (macos & linux)
+2. `cargo run run --example proxy -- --interface /your/if/name` (windows, but you need to run the terminal as admin)
+
+but on windows, you should also have `wintun.dll` installed in `C:\Windows\System32`
+
+after that, you can set the route table by the following instructions:
+
+### windows(run terminal as admin)
+
+1. `Get-NetAdapter` to check the utun8's if index, assume the index is `INDEX`
+2. `route add 1.1.1.1 mask 255.255.255.255 10.10.10..2 if INDEX`
+
+### linux
+
+`sudo ip route add 1.1.1.1/32 dev utun8`
+
+### macos 
+
+`sudo route add 146.190.81.132 -interface utun8`
+
+so now the have both the proxy program running and the routing table setup correctly, we can have a shot by running: `curl 1.1.1.1`
+
+or, you can replace the `1.1.1.1` with your server's ipv4 address, and run the iperf3 performance test.
+
 ## benchmark 
 
 see [benchmark result](./benchmark.md)
