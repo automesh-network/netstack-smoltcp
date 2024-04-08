@@ -4,8 +4,7 @@ A netstack for the special purpose of turning packets from/to a TUN interface in
 
 ## Example
 ```rust
-use tun::{Device, TunPacket};
-// let device = tun::create_as_async(&cfg)?;
+// let device = tun2::create_as_async(&cfg)?;
 // let framed = device.into_framed();
 
 // let mut builder = StackBuilder::default();
@@ -20,7 +19,7 @@ let (mut tun_sink, mut tun_stream) = framed.split();
 tokio::spawn(async move {
     while let Some(pkt) = stack_stream.next().await {
         if let Ok(pkt) = pkt {
-            tun_sink.send(TunPacket::new(pkt)).await.unwrap();
+            tun_sink.send(pkt).await.unwrap();
         }
     }
 });
@@ -29,7 +28,7 @@ tokio::spawn(async move {
 tokio::spawn(async move {
     while let Some(pkt) = tun_stream.next().await {
         if let Ok(pkt) = pkt {
-            stack_sink.send(pkt.into_bytes().into()).await.unwrap();
+            stack_sink.send(pkt.to_vec()).await.unwrap();
         }
     }
 });

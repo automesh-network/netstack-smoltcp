@@ -32,9 +32,28 @@ impl UdpSocket {
             stack_tx: PollSender::new(stack_tx),
         }
     }
+
+    pub fn split(self) -> (ReadHalf, WriteHalf) {
+        (
+            ReadHalf {
+                udp_rx: self.udp_rx,
+            },
+            WriteHalf {
+                stack_tx: self.stack_tx,
+            },
+        )
+    }
 }
 
-impl Stream for UdpSocket {
+pub struct ReadHalf {
+    udp_rx: Receiver<AnyIpPktFrame>,
+}
+
+pub struct WriteHalf {
+    stack_tx: PollSender<AnyIpPktFrame>,
+}
+
+impl Stream for ReadHalf {
     type Item = UdpMsg;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -78,7 +97,7 @@ impl Stream for UdpSocket {
     }
 }
 
-impl Sink<UdpMsg> for UdpSocket {
+impl Sink<UdpMsg> for WriteHalf {
     type Error = io::Error;
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -137,7 +156,6 @@ impl Sink<UdpMsg> for UdpSocket {
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.udp_rx.close();
         match ready!(self.stack_tx.poll_close_unpin(cx)) {
             Ok(()) => Poll::Ready(Ok(())),
             Err(err) => Poll::Ready(Err(io::Error::new(
