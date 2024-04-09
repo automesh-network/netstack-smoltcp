@@ -1,0 +1,37 @@
+name: Setup Android NDK and Rust compiler ENV
+description: Setup an Android_NDK_HOME environment by downloading and Rust compiler environment.
+inputs:
+  rust-target:
+    description: Rust target to build
+    required: true
+  sdk-version:
+    description: Exact SDK version to use
+    default: "33"
+  ndk-version:
+    description: Exact NDK version to use
+    default: "25"
+  ndk-platform:
+    description: Which host platform to use
+    default: "linux"
+runs:
+  using: "composite"
+  steps:
+    - name: Download Android NDK
+      run: curl --http1.1 -O https://dl.google.com/android/repository/android-ndk-r${{ inputs.ndk-version }}-${{ inputs.ndk-platform }}.zip
+      shell: bash
+    - name: Extract Android NDK
+      run: unzip -q android-ndk-r${{ inputs.ndk-version }}-${{ inputs.ndk-platform }}.zip
+      shell: bash
+    - name: Set Rust compiler ENV
+      run: |
+        ndk_home=${{ github.workspace }}/android-ndk-r${{ inputs.ndk-version }}
+        platform=$(ls ${ndk_home}/toolchains/llvm/prebuilt/ | head -1)
+        ndk_tool=${ndk_home}/toolchains/llvm/prebuilt/${platform}/bin
+        envvar_suffix=$(echo ${{ inputs.rust-target }} | sed "s/-/_/g")
+        upper_suffix=$(echo ${envvar_suffix} | tr '[:lower:]' '[:upper:]')
+        tool_prefix=${{ inputs.rust-target }}${{ inputs.sdk-version }}
+        echo "ANDROID_NDK_HOME=${ndk_home}" >> $GITHUB_ENV
+        echo "CC_${envvar_suffix}=${ndk_tool}/${tool_prefix}-clang" >> $GITHUB_ENV
+        echo "AR_${envvar_suffix}=${ndk_tool}/llvm-ar" >> $GITHUB_ENV
+        echo "CARGO_TARGET_${upper_suffix}_LINKER=${ndk_tool}/${tool_prefix}-clang" >> $GITHUB_ENV
+      shell: bash
