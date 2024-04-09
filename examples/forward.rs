@@ -8,19 +8,42 @@ use tokio::net::{TcpSocket, TcpStream};
 use tracing::{error, info, warn};
 
 // to run this example, you should set the policy routing **after the start of the main program**
-// the rules can be:
+//
+// linux:
+// with bind device:
+// `curl 1.1.1.1 --interface utun8`
+// with default route:
+// `bash scripts/route-linux.sh add`
+// `curl 1.1.1.1`
+// with single route:
 // `ip rule add to 1.1.1.1 table 200`
 // `ip route add default dev utun8 table 200`
-// `curl 1.1.1.1` or or run the netperf(https://github.com/ahmedsoliman/netperf) test of tcp stream
+// `curl 1.1.1.1`
+//
+// macos:
+// with default route:
+// `bash scripts/route-macos.sh add`
+// `curl 1.1.1.1`
+//
+// windows:
+// with default route:
+// tun2 set default route automatically, won't set agian
+// # `powershell.exe scripts/route-windows.ps1 add`
+// `curl 1.1.1.1`
+//
 // currently, the example only supports the TCP stream, and the UDP packet will be dropped.
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "forward", about = "Simply forward tun tcp/udp traffic.")]
 struct Opt {
     /// Default binding interface, default by guessed.
-    /// If specify it must exist in the interface list.
+    /// Specify but doesn't exist, no device is bound.
     #[structopt(short = "i", long = "interface")]
     interface: Option<String>,
+
+    /// Tracing subscriber log level.
+    #[structopt(long = "log-level", default_value = "debug")]
+    log_level: tracing::Level,
 
     /// Tokio current-thread runtime, default to multi-thread.
     #[structopt(long = "current-thread")]
@@ -59,27 +82,18 @@ async fn main_exec(opt: Opt) {
 
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(opt.log_level)
             .finish(),
     )
     .unwrap();
 
     // If not specify the binding interface, then try to guess a default interface.
-    let interface = match guess_interface(opt.interface.as_deref()) {
-        Ok(iface) => iface,
-        Err(err) => {
-            error!(err);
-            return;
-        }
-    };
+    let interface = guess_interface(opt.interface.as_deref())
+        .map_err(|err| warn!(err))
+        .ok();
 
     let mut cfg = tun::Configuration::default();
     cfg.layer(tun::Layer::L3);
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
-    cfg.platform_config(|cfg| {
-        // Provides pure IP packet
-        cfg.packet_information(false);
-    });
     let fd = -1;
     if fd >= 0 {
         cfg.raw_fd(fd);
@@ -145,14 +159,14 @@ async fn main_exec(opt: Opt) {
     futs.push(tokio_spawn!({
         let interface = interface.clone();
         async move {
-            handle_inbound_stream(interface, tcp_listener).await;
+            handle_inbound_stream(tcp_listener, interface).await;
         }
     }));
 
     // Receive and send UDP packets between netstack and NAT manager. The NAT
     // manager would maintain UDP sessions and send them to the dispatcher.
     futs.push(tokio_spawn!(async move {
-        handle_inbound_datagram(interface, udp_socket).await;
+        handle_inbound_datagram(udp_socket, interface).await;
     }));
 
     futures::future::join_all(futs)
@@ -166,7 +180,7 @@ async fn main_exec(opt: Opt) {
 }
 
 /// simply forward tcp stream
-async fn handle_inbound_stream(interface: Interface, mut tcp_listener: TcpListener) {
+async fn handle_inbound_stream(mut tcp_listener: TcpListener, interface: Option<Interface>) {
     while let Some((mut stream, local, remote)) = tcp_listener.next().await {
         let interface = interface.clone();
         tokio::spawn(async move {
@@ -192,7 +206,7 @@ async fn handle_inbound_stream(interface: Interface, mut tcp_listener: TcpListen
 }
 
 /// simply forward udp datagram
-async fn handle_inbound_datagram(interface: Interface, udp_socket: UdpSocket) {
+async fn handle_inbound_datagram(udp_socket: UdpSocket, interface: Option<Interface>) {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let (mut read_half, mut write_half) = udp_socket.split();
     tokio::spawn(async move {
@@ -235,7 +249,10 @@ async fn handle_inbound_datagram(interface: Interface, udp_socket: UdpSocket) {
     }
 }
 
-async fn new_tcp_stream<'a>(addr: SocketAddr, interface: Interface) -> std::io::Result<TcpStream> {
+async fn new_tcp_stream<'a>(
+    addr: SocketAddr,
+    interface: Option<Interface>,
+) -> std::io::Result<TcpStream> {
     let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None)?;
 
     socket_bind_interface(&socket, interface)?;
@@ -252,10 +269,9 @@ async fn new_tcp_stream<'a>(addr: SocketAddr, interface: Interface) -> std::io::
 
 async fn new_udp_packet(
     addr: SocketAddr,
-    interface: Interface,
+    interface: Option<Interface>,
 ) -> std::io::Result<tokio::net::UdpSocket> {
     let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None)?;
-
     socket_bind_interface(&socket, interface)?;
     socket.set_nonblocking(true)?;
 
@@ -298,10 +314,7 @@ fn get_device_broadcast(device: &tun::AsyncDevice) -> Option<std::net::Ipv4Addr>
                 Some(broadcast.into())
             }
             None => {
-                error!(
-                    "invalid tun address {}, netmask {}",
-                    address, netmask
-                );
+                error!("invalid tun address {}, netmask {}", address, netmask);
                 None
             }
         },
@@ -315,9 +328,15 @@ fn get_device_broadcast(device: &tun::AsyncDevice) -> Option<std::net::Ipv4Addr>
     }
 }
 
-fn socket_bind_interface(socket: &socket2::Socket, interface: Interface) -> std::io::Result<()> {
+fn socket_bind_interface(
+    socket: &socket2::Socket,
+    interface: Option<Interface>,
+) -> std::io::Result<()> {
+    let Some(interface) = interface else {
+        return Ok(());
+    };
     #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-    socket.bind_device(interface..name.as_bytes())?;
+    socket.bind_device(Some(interface.name.as_bytes()))?;
     #[cfg(not(any(target_os = "android", target_os = "fuchsia", target_os = "linux")))]
     {
         let bind_addr: SocketAddr = get_bind_addr(&interface)?;
