@@ -16,7 +16,21 @@ A netstack for the special purpose of turning packets from/to a TUN interface in
 [actions-badge]: https://github.com/automesh-network/netstack-smoltcp/workflows/CI/badge.svg
 [actions-url]: https://github.com/automesh-network/netstack-smoltcp/actions?query=workflow%3ACI+branch%3Amain
 
+## Features
+
+- Supports Future Send and non-Send, mostly pepole use Send.
+- Supports ICMP protocol drive by TCP runner to use ICMP ping.
+- Supports filtering packets by source and destination IP addresses.
+- Can read IP packets from netstack, write IP packets to netstack.
+- Can receive TcpStream from TcpListener exposed from netstack.
+- Can receive UDP datagram from UdpSocket exposed from netstack.
+- Implements popular future streaming traits and asynchronous IO traits:
+    * TcpListener implements futures Stream/Sink trait
+    * TcpStream implements tokio AsyncRead/AsyncWrite trait
+    * UdpSocket(ReadHalf/WriteHalf) implements futures Stream/Sink trait.
+
 ## Example
+
 ```rust
 // let device = tun2::create_as_async(&cfg)?;
 // let framed = device.into_framed();
