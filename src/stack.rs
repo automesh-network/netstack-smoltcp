@@ -29,7 +29,7 @@ impl Default for StackBuilder {
     fn default() -> Self {
         Self {
             stack_buffer_size: 1024,
-            udp_buffer_size: 256,
+            udp_buffer_size: 512,
             tcp_buffer_size: 512,
             ip_filters: IpFilters::with_non_broadcast(),
         }
