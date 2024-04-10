@@ -29,6 +29,19 @@ A netstack for the special purpose of turning packets from/to a TUN interface in
     * TcpStream implements tokio AsyncRead/AsyncWrite trait
     * UdpSocket(ReadHalf/WriteHalf) implements futures Stream/Sink trait.
 
+## Platforms
+
+This crate provides lightweight netstack support for Linux, iOS, macOS, Android and Windows.
+Currently, it works on most targets, but mainly tested the popular platforms which includes:
+- linux-amd64: x86_64-unknown-linux-gnu
+- android-arm64: aarch64-linux-android
+- android-amd64: x86_64-linux-android
+- macos-amd64: x86_64-apple-darwin
+- macos-arm64: aarch64-apple-darwin
+- ios-arm64: aarch64-apple-ios
+- windows-amd64: x86_64-pc-windows-msvc
+- windows-arm64: aarch64-pc-windows-msvc
+
 ## Example
 
 ```rust
@@ -56,7 +69,7 @@ tokio::spawn(async move {
 tokio::spawn(async move {
     while let Some(pkt) = tun_stream.next().await {
         if let Ok(pkt) = pkt {
-            stack_sink.send(pkt.to_vec()).await.unwrap();
+            stack_sink.send(pkt).await.unwrap();
         }
     }
 });
@@ -89,3 +102,21 @@ at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in netstack-smoltcp by you, as defined in the Apache-2.0 license,
 shall be dual licensed as above, without any additional terms or conditions.
+
+## Inspired By
+
+Special thanks to these amazing projects that inspired netstack-smoltcp:
+- [shadowsocks-rust](https://github.com/shadowsocks/shadowsocks-rust/)
+- [netstack-lwip](https://github.com/eycorsican/netstack-lwip/)
+- [rust-tun-active](https://github.com/tun2proxy/rust-tun)
+- [rust-tun](https://github.com/meh/rust-tun/)
+
+## Star History
+
+<a href="https://star-history.com/#automesh-network/netstack-smoltcp&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=automesh-network/netstack-smoltcp&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=automesh-network/netstack-smoltcp&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=automesh-network/netstack-smoltcp&type=Date" />
+ </picture>
+</a>
