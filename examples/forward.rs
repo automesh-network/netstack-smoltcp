@@ -118,8 +118,8 @@ async fn main_exec(opt: Opt) {
     let mut builder = StackBuilder::default();
     if let Some(device_broadcast) = get_device_broadcast(&device) {
         builder = builder
-            .add_src_v4_filter(move |v4| *v4 != device_broadcast)
-            .add_dst_v4_filter(move |v4| *v4 != device_broadcast);
+            // .add_ip_filter(Box::new(move |src, dst| *src != device_broadcast && *dst != device_broadcast));
+            .add_ip_filter_fn(move |src, dst| *src != device_broadcast && *dst != device_broadcast);
     }
 
     let (runner, udp_socket, tcp_listener, stack) = builder.build();
@@ -147,7 +147,7 @@ async fn main_exec(opt: Opt) {
     futs.push(tokio_spawn!(async move {
         while let Some(pkt) = tun_stream.next().await {
             if let Ok(pkt) = pkt {
-                match stack_sink.send(pkt.to_vec()).await {
+                match stack_sink.send(pkt).await {
                     Ok(_) => {}
                     Err(e) => warn!("failed to send packet to stack, err: {:?}", e),
                 };
