@@ -7,7 +7,7 @@ mod packet;
 pub use packet::AnyIpPktFrame;
 
 mod filter;
-pub use filter::{Filters, Ipv4Filter, Ipv6Filter};
+pub use filter::{IpFilter, IpFilters};
 
 pub mod udp;
 pub use udp::UdpSocket;
@@ -17,3 +17,6 @@ pub use tcp::{TcpListener, TcpStream};
 
 pub mod stack;
 pub use stack::{Stack, StackBuilder};
+
+/// Re-export
+pub use smoltcp;

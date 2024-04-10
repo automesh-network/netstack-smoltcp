@@ -1,6 +1,6 @@
 use std::{
     io,
-    net::{Ipv4Addr, Ipv6Addr},
+    net::IpAddr,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -10,14 +10,19 @@ use smoltcp::wire::IpProtocol;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::{debug, trace};
 
-use super::{packet::IpPacket, AnyIpPktFrame, Filters, Runner, TcpListener, UdpSocket};
+use crate::{
+    filter::{IpFilter, IpFilters},
+    packet::{AnyIpPktFrame, IpPacket},
+    runner::Runner,
+    tcp::TcpListener,
+    udp::UdpSocket,
+};
 
 pub struct StackBuilder {
     stack_buffer_size: usize,
     udp_buffer_size: usize,
     tcp_buffer_size: usize,
-    src_filters: Filters<'static>,
-    dst_filters: Filters<'static>,
+    ip_filters: IpFilters<'static>,
 }
 
 impl Default for StackBuilder {
@@ -26,8 +31,7 @@ impl Default for StackBuilder {
             stack_buffer_size: 1024,
             udp_buffer_size: 256,
             tcp_buffer_size: 512,
-            src_filters: Default::default(),
-            dst_filters: Default::default(),
+            ip_filters: IpFilters::with_non_broadcast(),
         }
     }
 }
@@ -49,35 +53,21 @@ impl StackBuilder {
         self
     }
 
-    pub fn add_src_v4_filter<F>(mut self, filter: F) -> Self
-    where
-        F: Fn(&Ipv4Addr) -> bool + Send + Sync + 'static,
-    {
-        self.src_filters.add_v4(Box::new(filter));
+    pub fn set_ip_filters(mut self, filters: IpFilters<'static>) -> Self {
+        self.ip_filters = filters;
         self
     }
 
-    pub fn add_dst_v4_filter<F>(mut self, filter: F) -> Self
-    where
-        F: Fn(&Ipv4Addr) -> bool + Send + Sync + 'static,
-    {
-        self.dst_filters.add_v4(Box::new(filter));
+    pub fn add_ip_filter(mut self, filter: IpFilter<'static>) -> Self {
+        self.ip_filters.add(filter);
         self
     }
 
-    pub fn add_src_v6_filter<F>(mut self, filter: F) -> Self
+    pub fn add_ip_filter_fn<F>(mut self, filter: F) -> Self
     where
-        F: Fn(&Ipv6Addr) -> bool + Send + Sync + 'static,
+        F: Fn(&IpAddr, &IpAddr) -> bool + Send + Sync + 'static,
     {
-        self.src_filters.add_v6(Box::new(filter));
-        self
-    }
-
-    pub fn add_dst_v6_filter<F>(mut self, filter: F) -> Self
-    where
-        F: Fn(&Ipv6Addr) -> bool + Send + Sync + 'static,
-    {
-        self.dst_filters.add_v6(Box::new(filter));
+        self.ip_filters.add_fn(filter);
         self
     }
 
@@ -89,8 +79,7 @@ impl StackBuilder {
         let udp_socket = UdpSocket::new(udp_rx, stack_tx.clone());
         let (tcp_runner, tcp_listener) = TcpListener::new(tcp_rx, stack_tx);
         let stack = Stack {
-            src_filters: self.src_filters,
-            dst_filters: self.dst_filters,
+            ip_filters: self.ip_filters,
             sink_buf: None,
             stack_rx,
             udp_tx,
@@ -114,8 +103,7 @@ impl StackBuilder {
 }
 
 pub struct Stack {
-    src_filters: Filters<'static>,
-    dst_filters: Filters<'static>,
+    ip_filters: IpFilters<'static>,
     sink_buf: Option<AnyIpPktFrame>,
     udp_tx: Sender<AnyIpPktFrame>,
     tcp_tx: Sender<AnyIpPktFrame>,
@@ -174,16 +162,13 @@ impl Sink<AnyIpPktFrame> for Stack {
         let src_ip = packet.src_addr();
         let dst_ip = packet.dst_addr();
 
-        let src_allowed = self.src_filters.is_allowed(&src_ip);
-        let dst_allowed = self.dst_filters.is_allowed(&dst_ip);
-
-        if !(src_allowed && dst_allowed) {
+        let addr_allowed = self.ip_filters.is_allowed(&src_ip, &dst_ip);
+        if !addr_allowed {
             trace!(
-                "IP packet {} (allowed? {}) -> {} (allowed? {}) throwing away",
+                "IP packet {} -> {} (allowed? {}) throwing away",
                 src_ip,
-                src_allowed,
                 dst_ip,
-                dst_allowed,
+                addr_allowed,
             );
             return Poll::Ready(Ok(()));
         }
