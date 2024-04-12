@@ -23,7 +23,7 @@ impl<'a> IpFilters<'a> {
         macro_rules! non_broadcast {
             ($addr:ident) => {
                 match $addr {
-                    IpAddr::V4(a) => !(a.is_broadcast() || a.is_multicast() || a.is_multicast()),
+                    IpAddr::V4(a) => !(a.is_broadcast() || a.is_multicast()),
                     IpAddr::V6(a) => !(a.is_multicast() || a.is_unspecified()),
                 }
             };
