@@ -1,7 +1,6 @@
 use std::net::{IpAddr, SocketAddr};
 
 use futures::{SinkExt, StreamExt};
-use netdev::Interface;
 use netstack_smoltcp::{StackBuilder, TcpListener, UdpSocket};
 use structopt::StructOpt;
 use tokio::net::{TcpSocket, TcpStream};
@@ -39,7 +38,7 @@ struct Opt {
     /// Default binding interface, default by guessed.
     /// Specify but doesn't exist, no device is bound.
     #[structopt(short = "i", long = "interface")]
-    interface: Option<String>,
+    interface: String,
 
     /// Tracing subscriber log level.
     #[structopt(long = "log-level", default_value = "debug")]
@@ -86,11 +85,6 @@ async fn main_exec(opt: Opt) {
             .finish(),
     )
     .unwrap();
-
-    // If not specify the binding interface, then try to guess a default interface.
-    let interface = guess_interface(opt.interface.as_deref())
-        .map_err(|err| warn!(err))
-        .ok();
 
     let mut cfg = tun::Configuration::default();
     cfg.layer(tun::Layer::L3);
@@ -157,7 +151,7 @@ async fn main_exec(opt: Opt) {
 
     // Extracts TCP connections from stack and sends them to the dispatcher.
     futs.push(tokio_spawn!({
-        let interface = interface.clone();
+        let interface = opt.interface.clone();
         async move {
             handle_inbound_stream(tcp_listener, interface).await;
         }
@@ -166,7 +160,7 @@ async fn main_exec(opt: Opt) {
     // Receive and send UDP packets between netstack and NAT manager. The NAT
     // manager would maintain UDP sessions and send them to the dispatcher.
     futs.push(tokio_spawn!(async move {
-        handle_inbound_datagram(udp_socket, interface).await;
+        handle_inbound_datagram(udp_socket, opt.interface).await;
     }));
 
     futures::future::join_all(futs)
@@ -180,12 +174,12 @@ async fn main_exec(opt: Opt) {
 }
 
 /// simply forward tcp stream
-async fn handle_inbound_stream(mut tcp_listener: TcpListener, interface: Option<Interface>) {
+async fn handle_inbound_stream(mut tcp_listener: TcpListener, interface: String) {
     while let Some((mut stream, local, remote)) = tcp_listener.next().await {
         let interface = interface.clone();
         tokio::spawn(async move {
             info!("new tcp connection: {:?} => {:?}", local, remote);
-            match new_tcp_stream(remote, interface).await {
+            match new_tcp_stream(remote, &interface).await {
                 Ok(mut remote_stream) => {
                     // pipe between two tcp stream
                     match tokio::io::copy_bidirectional(&mut stream, &mut remote_stream).await {
@@ -206,7 +200,7 @@ async fn handle_inbound_stream(mut tcp_listener: TcpListener, interface: Option<
 }
 
 /// simply forward udp datagram
-async fn handle_inbound_datagram(udp_socket: UdpSocket, interface: Option<Interface>) {
+async fn handle_inbound_datagram(udp_socket: UdpSocket, interface: String) {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let (mut read_half, mut write_half) = udp_socket.split();
     tokio::spawn(async move {
@@ -220,7 +214,7 @@ async fn handle_inbound_datagram(udp_socket: UdpSocket, interface: Option<Interf
         let interface = interface.clone();
         tokio::spawn(async move {
             info!("new udp datagram: {:?} => {:?}", local, remote);
-            match new_udp_packet(remote, interface).await {
+            match new_udp_packet(remote, &interface).await {
                 Ok(remote_socket) => {
                     // pipe between two udp sockets
                     let _ = remote_socket.send(&data).await;
@@ -249,13 +243,10 @@ async fn handle_inbound_datagram(udp_socket: UdpSocket, interface: Option<Interf
     }
 }
 
-async fn new_tcp_stream<'a>(
-    addr: SocketAddr,
-    interface: Option<Interface>,
-) -> std::io::Result<TcpStream> {
+async fn new_tcp_stream<'a>(addr: SocketAddr, iface: &str) -> std::io::Result<TcpStream> {
+    use socket2_ext::{AddressBinding, BindDeviceOption};
     let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None)?;
-
-    socket_bind_interface(&socket, interface)?;
+    socket.bind_to_device(BindDeviceOption::v4(iface))?;
     socket.set_keepalive(true)?;
     socket.set_nodelay(true)?;
     socket.set_nonblocking(true)?;
@@ -267,12 +258,10 @@ async fn new_tcp_stream<'a>(
     Ok(stream)
 }
 
-async fn new_udp_packet(
-    addr: SocketAddr,
-    interface: Option<Interface>,
-) -> std::io::Result<tokio::net::UdpSocket> {
+async fn new_udp_packet(addr: SocketAddr, iface: &str) -> std::io::Result<tokio::net::UdpSocket> {
+    use socket2_ext::{AddressBinding, BindDeviceOption};
     let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None)?;
-    socket_bind_interface(&socket, interface)?;
+    socket.bind_to_device(BindDeviceOption::v4(iface))?;
     socket.set_nonblocking(true)?;
 
     let socket = tokio::net::UdpSocket::from_std(socket.into());
@@ -326,54 +315,4 @@ fn get_device_broadcast(device: &tun::AsyncDevice) -> Option<std::net::Ipv4Addr>
             None
         }
     }
-}
-
-fn socket_bind_interface(
-    socket: &socket2::Socket,
-    interface: Option<Interface>,
-) -> std::io::Result<()> {
-    let Some(interface) = interface else {
-        return Ok(());
-    };
-    #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-    socket.bind_device(Some(interface.name.as_bytes()))?;
-    #[cfg(not(any(target_os = "android", target_os = "fuchsia", target_os = "linux")))]
-    {
-        let bind_addr: SocketAddr = get_bind_addr(&interface)?;
-        let bind_addr = socket2::SockAddr::from(bind_addr);
-        socket.bind(&bind_addr)?;
-    }
-    Ok(())
-}
-
-fn guess_interface(interface: Option<&str>) -> Result<Interface, String> {
-    match interface {
-        Some(interface) => netdev::get_interfaces()
-            .into_iter()
-            .find(|iface| iface.name == interface)
-            .ok_or_else(|| format!("No such interface name `{:?}`", interface)),
-        None => netdev::get_default_interface(),
-    }
-}
-
-fn get_bind_addr(interface: &Interface) -> std::io::Result<std::net::SocketAddr> {
-    interface
-        .ipv4
-        .first()
-        .map(|v4| std::net::IpAddr::V4(v4.addr))
-        .or_else(|| {
-            interface
-                .ipv6
-                .first()
-                .map(|v6| std::net::IpAddr::V6(v6.addr))
-        })
-        .map_or_else(
-            || {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::AddrNotAvailable,
-                    format!("Not found ip in the interface `{:?}`", interface),
-                ))
-            },
-            |ip| Ok((ip, 0).into()),
-        )
 }
