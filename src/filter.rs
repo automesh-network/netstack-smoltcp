@@ -23,7 +23,7 @@ impl<'a> IpFilters<'a> {
         macro_rules! non_broadcast {
             ($addr:ident) => {
                 match $addr {
-                    IpAddr::V4(a) => !(a.is_broadcast() || a.is_multicast() || a.is_multicast()),
+                    IpAddr::V4(a) => !(a.is_broadcast() || a.is_multicast() || a.is_unspecified()),
                     IpAddr::V6(a) => !(a.is_multicast() || a.is_unspecified()),
                 }
             };
@@ -47,7 +47,7 @@ impl<'a> IpFilters<'a> {
     }
 
     pub fn add_all<I: IntoIterator<Item = IpFilter<'a>>>(&mut self, filters: I) {
-        self.filters.extend(filters.into_iter());
+        self.filters.extend(filters);
     }
 
     pub fn is_allowed(&self, src: &IpAddr, dst: &IpAddr) -> bool {
