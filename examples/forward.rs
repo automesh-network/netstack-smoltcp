@@ -96,12 +96,7 @@ async fn main_exec(opt: Opt) {
             .address("10.10.10.2")
             .destination("10.10.10.1")
             .mtu(tun::DEFAULT_MTU);
-        #[cfg(not(any(
-            target_arch = "mips",
-            target_arch = "mips64",
-            target_arch = "mipsel",
-            target_arch = "mipsel64",
-        )))]
+        #[cfg(not(any(target_arch = "mips", target_arch = "mips64",)))]
         {
             cfg.netmask("255.255.255.0");
         }
@@ -109,15 +104,23 @@ async fn main_exec(opt: Opt) {
     }
 
     let device = tun::create_as_async(&cfg).unwrap();
-    let mut builder = StackBuilder::default();
+    let mut builder = StackBuilder::default()
+        .enable_tcp(true)
+        .enable_udp(true)
+        .enable_icmp(true);
     if let Some(device_broadcast) = get_device_broadcast(&device) {
         builder = builder
             // .add_ip_filter(Box::new(move |src, dst| *src != device_broadcast && *dst != device_broadcast));
             .add_ip_filter_fn(move |src, dst| *src != device_broadcast && *dst != device_broadcast);
     }
 
-    let (runner, udp_socket, tcp_listener, stack) = builder.build();
-    tokio_spawn!(runner);
+    let (stack, runner, udp_socket, tcp_listener) = builder.build().unwrap();
+    let udp_socket = udp_socket.unwrap(); // udp enabled
+    let tcp_listener = tcp_listener.unwrap(); // tcp enabled or icmp enabled
+
+    if let Some(runner) = runner {
+        tokio_spawn!(runner);
+    }
 
     let framed = device.into_framed();
     let (mut tun_sink, mut tun_stream) = framed.split();
