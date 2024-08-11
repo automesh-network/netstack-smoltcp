@@ -48,10 +48,19 @@ Currently, it works on most targets, but mainly tested the popular platforms whi
 // let device = tun2::create_as_async(&cfg)?;
 // let framed = device.into_framed();
 
-// let mut builder = StackBuilder::default();
-// let (runner, udp_socket, tcp_listener, stack) = builder.build();
-// tokio::task::spawn(runner);
-let (udp_socket, tcp_listener, stack) = StackBuilder::default().run();
+let (stack, runner, udp_socket, tcp_listener) = netstack_smoltcp::StackBuilder::default()
+    .stack_buffer_size(512)
+    .tcp_buffer_size(4096)
+    .enable_udp(true)
+    .enable_tcp(true)
+    .enable_icmp(true)
+    .build()
+    .unwrap();
+let mut udp_socket = udp_socket.unwrap(); // udp enabled
+let mut tcp_listener = tcp_listener.unwrap(); // tcp/icmp enabled
+if let Some(runner) = runner {
+    tokio::spawn(runner);
+}
 
 let (mut stack_sink, mut stack_stream) = stack.split();
 let (mut tun_sink, mut tun_stream) = framed.split();
@@ -105,18 +114,9 @@ shall be dual licensed as above, without any additional terms or conditions.
 
 ## Inspired By
 
-Special thanks to these amazing projects that inspired netstack-smoltcp:
+Special thanks to these amazing projects that inspired netstack-smoltcp (in no particular order):
 - [shadowsocks-rust](https://github.com/shadowsocks/shadowsocks-rust/)
 - [netstack-lwip](https://github.com/eycorsican/netstack-lwip/)
 - [rust-tun-active](https://github.com/tun2proxy/rust-tun)
 - [rust-tun](https://github.com/meh/rust-tun/)
-
-## Star History
-
-<a href="https://star-history.com/#automesh-network/netstack-smoltcp&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=automesh-network/netstack-smoltcp&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=automesh-network/netstack-smoltcp&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=automesh-network/netstack-smoltcp&type=Date" />
- </picture>
-</a>
+- [smoltcp](https://github.com/smoltcp-rs/smoltcp)
