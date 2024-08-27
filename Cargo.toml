@@ -8,7 +8,7 @@ repository = "https://github.com/automesh-network/netstack-smoltcp"
 homepage = "https://github.com/automesh-network/netstack-smoltcp"
 documentation = "https://docs.rs/netstack-smoltcp"
 keywords = ["netstack", "smoltcp", "network", "ip", "tun"]
-categories = ["network-programing"]
+categories = ["network-programming"]
 description = """
 A netstack for the special purpose of turning packets from/to a TUN interface
 into TCP streams and UDP packets. It uses smoltcp-rs as the backend netstack.
