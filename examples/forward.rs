@@ -86,8 +86,8 @@ async fn main_exec(opt: Opt) {
     )
     .unwrap();
 
-    let mut cfg = tun::Configuration::default();
-    cfg.layer(tun::Layer::L3);
+    let mut cfg = tun2::Configuration::default();
+    cfg.layer(tun2::Layer::L3);
     let fd = -1;
     if fd >= 0 {
         cfg.raw_fd(fd);
@@ -95,7 +95,7 @@ async fn main_exec(opt: Opt) {
         cfg.tun_name("utun8")
             .address("10.10.10.2")
             .destination("10.10.10.1")
-            .mtu(tun::DEFAULT_MTU);
+            .mtu(tun2::DEFAULT_MTU);
         #[cfg(not(any(target_arch = "mips", target_arch = "mips64",)))]
         {
             cfg.netmask("255.255.255.0");
@@ -103,7 +103,7 @@ async fn main_exec(opt: Opt) {
         cfg.up();
     }
 
-    let device = tun::create_as_async(&cfg).unwrap();
+    let device = tun2::create_as_async(&cfg).unwrap();
     let mut builder = StackBuilder::default()
         .enable_tcp(true)
         .enable_udp(true)
@@ -274,12 +274,12 @@ async fn new_udp_packet(addr: SocketAddr, iface: &str) -> std::io::Result<tokio:
     socket
 }
 
-fn get_device_broadcast(device: &tun::AsyncDevice) -> Option<std::net::Ipv4Addr> {
-    use tun::AbstractDevice;
+fn get_device_broadcast(device: &tun2::AsyncDevice) -> Option<std::net::Ipv4Addr> {
+    use tun2::AbstractDevice;
 
-    let mtu = device.as_ref().mtu().unwrap_or(tun::DEFAULT_MTU);
+    let mtu = device.mtu().unwrap_or(tun2::DEFAULT_MTU);
 
-    let address = match device.as_ref().address() {
+    let address = match device.address() {
         Ok(a) => match a {
             IpAddr::V4(v4) => v4,
             IpAddr::V6(_) => return None,
@@ -287,7 +287,7 @@ fn get_device_broadcast(device: &tun::AsyncDevice) -> Option<std::net::Ipv4Addr>
         Err(_) => return None,
     };
 
-    let netmask = match device.as_ref().netmask() {
+    let netmask = match device.netmask() {
         Ok(n) => match n {
             IpAddr::V4(v4) => v4,
             IpAddr::V6(_) => return None,

@@ -1,5 +1,4 @@
 use std::{
-    io,
     net::IpAddr,
     pin::Pin,
     task::{Context, Poll},
@@ -92,6 +91,7 @@ impl StackBuilder {
         self
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn build(
         self,
     ) -> std::io::Result<(
@@ -125,20 +125,12 @@ impl StackBuilder {
             ));
         }
         let icmp_tx = if self.enable_icmp {
-            if let Some(ref tcp_tx) = tcp_tx {
-                Some(tcp_tx.clone())
-            } else {
-                None
-            }
+            tcp_tx.clone()
         } else {
             None
         };
 
-        let udp_socket = if let Some(udp_rx) = udp_rx {
-            Some(UdpSocket::new(udp_rx, stack_tx.clone()))
-        } else {
-            None
-        };
+        let udp_socket = udp_rx.map(|udp_rx| UdpSocket::new(udp_rx, stack_tx.clone()));
 
         let (tcp_runner, tcp_listener) = if let Some(tcp_rx) = tcp_rx {
             let (tcp_runner, tcp_listener) = TcpListener::new(tcp_rx, stack_tx);
@@ -207,7 +199,7 @@ impl Stack {
 
 // Recv from stack.
 impl Stream for Stack {
-    type Item = io::Result<AnyIpPktFrame>;
+    type Item = std::io::Result<AnyIpPktFrame>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.stack_rx.poll_recv(cx) {
@@ -220,7 +212,7 @@ impl Stream for Stack {
 
 // Send to stack.
 impl Sink<AnyIpPktFrame> for Stack {
-    type Error = io::Error;
+    type Error = std::io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if self.sink_buf.is_none() {
@@ -235,24 +227,16 @@ impl Sink<AnyIpPktFrame> for Stack {
             return Ok(());
         }
 
-        let packet = IpPacket::new_checked(item.as_slice()).map_err(|err| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("invalid IP packet: {}", err),
-            )
-        })?;
+        use std::io::{Error, ErrorKind::InvalidInput};
+        let packet = IpPacket::new_checked(item.as_slice())
+            .map_err(|err| Error::new(InvalidInput, format!("invalid IP packet: {}", err)))?;
 
         let src_ip = packet.src_addr();
         let dst_ip = packet.dst_addr();
 
         let addr_allowed = self.ip_filters.is_allowed(&src_ip, &dst_ip);
         if !addr_allowed {
-            trace!(
-                "IP packet {} -> {} (allowed? {}) throwing away",
-                src_ip,
-                dst_ip,
-                addr_allowed,
-            );
+            trace!("IP packet {src_ip} -> {dst_ip} (allowed? {addr_allowed}) throwing away",);
             return Ok(());
         }
 

@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    io, mem,
     net::SocketAddr,
     pin::Pin,
     sync::{
@@ -29,7 +28,7 @@ use tokio::{
 };
 use tracing::{error, trace};
 
-use super::{
+use crate::{
     device::VirtualDevice,
     packet::{AnyIpPktFrame, IpPacket},
     Runner,
@@ -116,17 +115,12 @@ impl TcpListenerRunner {
 
             let src_ip = packet.src_addr();
             let dst_ip = packet.dst_addr();
+            let payload = packet.payload();
 
-            let packet = match TcpPacket::new_checked(packet.payload()) {
+            let packet = match TcpPacket::new_checked(payload) {
                 Ok(p) => p,
                 Err(err) => {
-                    error!(
-                        "invalid TCP err: {}, src_ip: {}, dst_ip: {}, payload: {:?}",
-                        err,
-                        packet.src_addr(),
-                        packet.dst_addr(),
-                        packet.payload(),
-                    );
+                    error!("invalid TCP err: {err}, src_ip: {src_ip}, dst_ip: {dst_ip}, payload: {payload:?}");
                     continue;
                 }
             };
@@ -253,9 +247,7 @@ impl TcpListenerRunner {
                     });
 
                     match result {
-                        Ok(..) => {
-                            wake_receiver = true;
-                        }
+                        Ok(..) => wake_receiver = true,
                         Err(err) => {
                             error!("socket recv error: {:?}, {:?}", err, socket.state());
 
@@ -275,16 +267,16 @@ impl TcpListenerRunner {
 
                 // If socket is not in ESTABLISH, FIN-WAIT-1, FIN-WAIT-2,
                 // the local client have closed our receiver.
+                let states = [
+                    TcpState::Listen,
+                    TcpState::SynReceived,
+                    TcpState::Established,
+                    TcpState::FinWait1,
+                    TcpState::FinWait2,
+                ];
                 if matches!(control.recv_state, TcpSocketState::Normal)
                     && !socket.may_recv()
-                    && !matches!(
-                        socket.state(),
-                        TcpState::Listen
-                            | TcpState::SynReceived
-                            | TcpState::Established
-                            | TcpState::FinWait1
-                            | TcpState::FinWait2
-                    )
+                    && !states.contains(&socket.state())
                 {
                     trace!("closed TCP Read Half, {:?}", socket.state());
 
@@ -308,9 +300,7 @@ impl TcpListenerRunner {
                     });
 
                     match result {
-                        Ok(..) => {
-                            wake_sender = true;
-                        }
+                        Ok(..) => wake_sender = true,
                         Err(err) => {
                             error!("socket send error: {:?}, {:?}", err, socket.state());
 
@@ -466,7 +456,7 @@ impl AsyncRead for TcpStream {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
+    ) -> Poll<std::io::Result<()>> {
         let mut control = self.control.lock();
 
         // Read from buffer
@@ -486,7 +476,9 @@ impl AsyncRead for TcpStream {
             return Poll::Pending;
         }
 
-        let recv_buf = unsafe { mem::transmute::<_, &mut [u8]>(buf.unfilled_mut()) };
+        let recv_buf = unsafe {
+            std::mem::transmute::<&mut [std::mem::MaybeUninit<u8>], &mut [u8]>(buf.unfilled_mut())
+        };
         let n = control.recv_buffer.dequeue_slice(recv_buf);
         buf.advance(n);
 
@@ -503,12 +495,12 @@ impl AsyncWrite for TcpStream {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
+    ) -> Poll<std::io::Result<usize>> {
         let mut control = self.control.lock();
 
         // If state == Close | Closing | Closed, the TCP stream WR half is closed.
         if !matches!(control.send_state, TcpSocketState::Normal) {
-            return Err(io::ErrorKind::BrokenPipe.into()).into();
+            return Err(std::io::ErrorKind::BrokenPipe.into()).into();
         }
 
         // Write to buffer
@@ -532,11 +524,11 @@ impl AsyncWrite for TcpStream {
         Ok(n).into()
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         Ok(()).into()
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         let mut control = self.control.lock();
 
         if matches!(control.send_state, TcpSocketState::Closed) {

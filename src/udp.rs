@@ -1,5 +1,4 @@
 use std::{
-    io,
     net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
@@ -12,7 +11,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::PollSender;
 use tracing::{error, trace};
 
-use super::packet::{AnyIpPktFrame, IpPacket};
+use crate::packet::{AnyIpPktFrame, IpPacket};
 
 pub type UdpMsg = (
     Vec<u8>,    /* payload */
@@ -69,17 +68,12 @@ impl Stream for ReadHalf {
 
                 let src_ip = packet.src_addr();
                 let dst_ip = packet.dst_addr();
+                let payload = packet.payload();
 
-                let packet = match UdpPacket::new_checked(packet.payload()) {
+                let packet = match UdpPacket::new_checked(payload) {
                     Ok(p) => p,
                     Err(err) => {
-                        error!(
-                            "invalid err: {}, src_ip: {}, dst_ip: {}, payload: {:?}",
-                            err,
-                            packet.src_addr(),
-                            packet.dst_addr(),
-                            packet.payload(),
-                        );
+                        error!("invalid err: {err}, src_ip: {src_ip}, dst_ip: {dst_ip}, payload: {payload:?}");
                         return None;
                     }
                 };
@@ -98,16 +92,17 @@ impl Stream for ReadHalf {
 }
 
 impl Sink<UdpMsg> for WriteHalf {
-    type Error = io::Error;
+    type Error = std::io::Error;
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match ready!(self.stack_tx.poll_ready_unpin(cx)) {
             Ok(()) => Poll::Ready(Ok(())),
-            Err(err) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, err))),
+            Err(err) => Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::Other, err))),
         }
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: UdpMsg) -> Result<(), Self::Error> {
+        use std::io::{Error, ErrorKind::InvalidData, ErrorKind::Other};
         let (data, src_addr, dst_addr) = item;
 
         if data.is_empty() {
@@ -124,44 +119,34 @@ impl Sink<UdpMsg> for WriteHalf {
                     .udp(src_addr.port(), dst_addr.port())
             }
             _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "source and destination type unmatch",
-                ));
+                return Err(Error::new(InvalidData, "src or destination type unmatch"));
             }
         };
 
         let mut ip_packet_writer = Vec::with_capacity(builder.size(data.len()));
         builder
             .write(&mut ip_packet_writer, &data)
-            .expect("PacketBuilder::write");
+            .map_err(|err| Error::new(Other, format!("PacketBuilder::write: {}", err)))?;
 
         match self.stack_tx.start_send_unpin(ip_packet_writer.clone()) {
             Ok(()) => Ok(()),
-            Err(err) => Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("send error: {}", err),
-            )),
+            Err(err) => Err(Error::new(Other, format!("send error: {}", err))),
         }
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        use std::io::{Error, ErrorKind::Other};
         match ready!(self.stack_tx.poll_flush_unpin(cx)) {
             Ok(()) => Poll::Ready(Ok(())),
-            Err(err) => Poll::Ready(Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("flush error: {}", err),
-            ))),
+            Err(err) => Poll::Ready(Err(Error::new(Other, format!("flush error: {}", err)))),
         }
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        use std::io::{Error, ErrorKind::Other};
         match ready!(self.stack_tx.poll_close_unpin(cx)) {
             Ok(()) => Poll::Ready(Ok(())),
-            Err(err) => Poll::Ready(Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("close error: {}", err),
-            ))),
+            Err(err) => Poll::Ready(Err(Error::new(Other, format!("close error: {}", err)))),
         }
     }
 }
