@@ -9,7 +9,7 @@ use smoltcp::{
 };
 use tokio::sync::mpsc::{unbounded_channel, Permit, Sender, UnboundedReceiver, UnboundedSender};
 
-use super::packet::AnyIpPktFrame;
+use crate::packet::AnyIpPktFrame;
 
 pub(super) struct VirtualDevice {
     in_buf_avail: Arc<AtomicBool>,
