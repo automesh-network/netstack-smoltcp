@@ -119,10 +119,8 @@ impl StackBuilder {
         // ICMP is handled by TCP's Interface.
         // smoltcp's interface will always send replies to EchoRequest
         if self.enable_icmp && !self.enable_tcp {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Enabling icmp requires enabling tcp",
-            ));
+            use std::io::{Error, ErrorKind::InvalidInput};
+            return Err(Error::new(InvalidInput, "ICMP requires TCP"));
         }
         let icmp_tx = if self.enable_icmp {
             tcp_tx.clone()
@@ -133,7 +131,7 @@ impl StackBuilder {
         let udp_socket = udp_rx.map(|udp_rx| UdpSocket::new(udp_rx, stack_tx.clone()));
 
         let (tcp_runner, tcp_listener) = if let Some(tcp_rx) = tcp_rx {
-            let (tcp_runner, tcp_listener) = TcpListener::new(tcp_rx, stack_tx);
+            let (tcp_runner, tcp_listener) = TcpListener::new(tcp_rx, stack_tx)?;
             (Some(tcp_runner), Some(tcp_listener))
         } else {
             (None, None)

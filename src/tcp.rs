@@ -78,11 +78,13 @@ impl TcpListenerRunner {
         Runner::new(async move {
             let notify = Arc::new(Notify::new());
             let (socket_tx, socket_rx) = unbounded_channel::<TcpSocketCreation>();
-            tokio::select! {
-                _ = Self::handle_packet(notify.clone(), iface_ingress_tx, iface_ingress_tx_avail.clone(), tcp_rx, stream_tx, socket_tx) => {}
-                _ = Self::handle_socket(notify, device, iface, iface_ingress_tx_avail, sockets, socket_rx) => {}
-            }
+            let res = tokio::select! {
+                v = Self::handle_packet(notify.clone(), iface_ingress_tx, iface_ingress_tx_avail.clone(), tcp_rx, stream_tx, socket_tx) => v,
+                v = Self::handle_socket(notify, device, iface, iface_ingress_tx_avail, sockets, socket_rx) => v,
+            };
+            res?;
             trace!("VirtDevice::poll thread exited");
+            Ok(())
         })
     }
 
@@ -93,7 +95,7 @@ impl TcpListenerRunner {
         mut tcp_rx: Receiver<AnyIpPktFrame>,
         stream_tx: UnboundedSender<TcpStream>,
         socket_tx: UnboundedSender<TcpSocketCreation>,
-    ) {
+    ) -> std::io::Result<()> {
         while let Some(frame) = tcp_rx.recv().await {
             let packet = match IpPacket::new_checked(frame.as_slice()) {
                 Ok(p) => p,
@@ -107,7 +109,7 @@ impl TcpListenerRunner {
             if matches!(packet.protocol(), IpProtocol::Icmp | IpProtocol::Icmpv6) {
                 iface_ingress_tx
                     .send(frame)
-                    .expect("channel already closed");
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))?;
                 iface_ingress_tx_avail.store(true, Ordering::Release);
                 notify.notify_one();
                 continue;
@@ -165,19 +167,20 @@ impl TcpListenerRunner {
                         notify: notify.clone(),
                         control: control.clone(),
                     })
-                    .expect("channel already closed");
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))?;
                 socket_tx
                     .send(TcpSocketCreation { control, socket })
-                    .expect("channel already closed");
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))?;
             }
 
             // Pipeline tcp stream packet
             iface_ingress_tx
                 .send(frame)
-                .expect("channel already closed");
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))?;
             iface_ingress_tx_avail.store(true, Ordering::Release);
             notify.notify_one();
         }
+        Ok(())
     }
 
     async fn handle_socket(
@@ -187,7 +190,7 @@ impl TcpListenerRunner {
         iface_ingress_tx_avail: Arc<AtomicBool>,
         mut sockets: HashMap<SocketHandle, SharedControl>,
         mut socket_rx: UnboundedReceiver<TcpSocketCreation>,
-    ) {
+    ) -> std::io::Result<()> {
         let mut socket_set = SocketSet::new(vec![]);
         loop {
             while let Ok(TcpSocketCreation { control, socket }) = socket_rx.try_recv() {
@@ -354,9 +357,9 @@ impl TcpListener {
     pub(super) fn new(
         tcp_rx: Receiver<AnyIpPktFrame>,
         stack_tx: Sender<AnyIpPktFrame>,
-    ) -> (Runner, Self) {
+    ) -> std::io::Result<(Runner, Self)> {
         let (mut device, iface_ingress_tx, iface_ingress_tx_avail) = VirtualDevice::new(stack_tx);
-        let iface = Self::create_interface(&mut device);
+        let iface = Self::create_interface(&mut device)?;
 
         let (stream_tx, stream_rx) = unbounded_channel();
 
@@ -370,10 +373,10 @@ impl TcpListener {
             HashMap::new(),
         );
 
-        (runner, Self { stream_rx })
+        Ok((runner, Self { stream_rx }))
     }
 
-    fn create_interface<D>(device: &mut D) -> Interface
+    fn create_interface<D>(device: &mut D) -> std::io::Result<Interface>
     where
         D: Device + ?Sized,
     {
@@ -391,13 +394,13 @@ impl TcpListener {
         iface
             .routes_mut()
             .add_default_ipv4_route(Ipv4Address::new(0, 0, 0, 1))
-            .expect("IPv4 default route");
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, e))?;
         iface
             .routes_mut()
             .add_default_ipv6_route(Ipv6Address::new(0, 0, 0, 0, 0, 0, 0, 1))
-            .expect("IPv6 default route");
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, e))?;
         iface.set_any_ip(true);
-        iface
+        Ok(iface)
     }
 }
 

@@ -38,4 +38,4 @@ impl<T> Future for BoxFuture<'_, T> {
     }
 }
 
-pub type Runner = BoxFuture<'static, ()>;
+pub type Runner = BoxFuture<'static, std::io::Result<()>>;
