@@ -92,7 +92,7 @@ async fn main_exec(opt: Opt) {
     if fd >= 0 {
         cfg.raw_fd(fd);
     } else {
-        cfg.tun_name("utun8")
+        cfg.tun_name(&opt.interface)
             .address("10.10.10.2")
             .destination("10.10.10.1")
             .mtu(tun2::DEFAULT_MTU);
