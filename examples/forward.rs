@@ -40,6 +40,10 @@ struct Opt {
     #[structopt(short = "i", long = "interface")]
     interface: String,
 
+    /// name of the tun device, default to rtun8.
+    #[structopt(short = "n", long = "name", default_value = "utun8")]
+    name: String,
+
     /// Tracing subscriber log level.
     #[structopt(long = "log-level", default_value = "debug")]
     log_level: tracing::Level,
@@ -92,7 +96,7 @@ async fn main_exec(opt: Opt) {
     if fd >= 0 {
         cfg.raw_fd(fd);
     } else {
-        cfg.tun_name(&opt.interface)
+        cfg.tun_name(&opt.name)
             .address("10.10.10.2")
             .destination("10.10.10.1")
             .mtu(tun2::DEFAULT_MTU);
