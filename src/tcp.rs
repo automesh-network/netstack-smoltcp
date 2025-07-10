@@ -200,7 +200,10 @@ impl TcpListenerRunner {
 
             let before_poll = Instant::now();
             let updated_sockets = iface.poll(before_poll, &mut device, &mut socket_set);
-            if updated_sockets {
+            if matches!(
+                updated_sockets,
+                smoltcp::iface::PollResult::SocketStateChanged
+            ) {
                 trace!("VirtDevice::poll costed {}", Instant::now() - before_poll);
             }
 
@@ -499,6 +502,7 @@ impl AsyncWrite for TcpStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
+        error!("TcpStream::poll_write called with {} bytes", buf.len());
         let mut control = self.control.lock();
 
         // If state == Close | Closing | Closed, the TCP stream WR half is closed.
