@@ -502,7 +502,6 @@ impl AsyncWrite for TcpStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
-        error!("TcpStream::poll_write called with {} bytes", buf.len());
         let mut control = self.control.lock();
 
         // If state == Close | Closing | Closed, the TCP stream WR half is closed.
