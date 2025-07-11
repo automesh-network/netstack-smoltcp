@@ -299,7 +299,7 @@ fn get_device_broadcast(device: &tun2::AsyncDevice) -> Option<std::net::Ipv4Addr
         Err(_) => return None,
     };
 
-    match smoltcp::wire::Ipv4Cidr::from_netmask(address.into(), netmask.into()) {
+    match smoltcp::wire::Ipv4Cidr::from_netmask(address, netmask) {
         Ok(address_net) => match address_net.broadcast() {
             Some(broadcast) => {
                 info!(
@@ -307,7 +307,7 @@ fn get_device_broadcast(device: &tun2::AsyncDevice) -> Option<std::net::Ipv4Addr
                     address_net, address, netmask, broadcast, mtu,
                 );
 
-                Some(broadcast.into())
+                Some(broadcast)
             }
             None => {
                 error!("invalid tun address {}, netmask {}", address, netmask);
