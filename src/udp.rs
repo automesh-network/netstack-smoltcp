@@ -97,12 +97,12 @@ impl Sink<UdpMsg> for WriteHalf {
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match ready!(self.stack_tx.poll_ready_unpin(cx)) {
             Ok(()) => Poll::Ready(Ok(())),
-            Err(err) => Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::Other, err))),
+            Err(err) => Poll::Ready(Err(std::io::Error::other(err))),
         }
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: UdpMsg) -> Result<(), Self::Error> {
-        use std::io::{Error, ErrorKind::InvalidData, ErrorKind::Other};
+        use std::io::{Error, ErrorKind::InvalidData};
         let (data, src_addr, dst_addr) = item;
 
         if data.is_empty() {
@@ -126,27 +126,27 @@ impl Sink<UdpMsg> for WriteHalf {
         let mut ip_packet_writer = Vec::with_capacity(builder.size(data.len()));
         builder
             .write(&mut ip_packet_writer, &data)
-            .map_err(|err| Error::new(Other, format!("PacketBuilder::write: {}", err)))?;
+            .map_err(|err| Error::other(format!("PacketBuilder::write: {err}")))?;
 
         match self.stack_tx.start_send_unpin(ip_packet_writer.clone()) {
             Ok(()) => Ok(()),
-            Err(err) => Err(Error::new(Other, format!("send error: {}", err))),
+            Err(err) => Err(Error::other(format!("send error: {err}"))),
         }
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        use std::io::{Error, ErrorKind::Other};
+        use std::io::Error;
         match ready!(self.stack_tx.poll_flush_unpin(cx)) {
             Ok(()) => Poll::Ready(Ok(())),
-            Err(err) => Poll::Ready(Err(Error::new(Other, format!("flush error: {}", err)))),
+            Err(err) => Poll::Ready(Err(Error::other(format!("flush error: {err}")))),
         }
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        use std::io::{Error, ErrorKind::Other};
+        use std::io::Error;
         match ready!(self.stack_tx.poll_close_unpin(cx)) {
             Ok(()) => Poll::Ready(Ok(())),
-            Err(err) => Poll::Ready(Err(Error::new(Other, format!("close error: {}", err)))),
+            Err(err) => Poll::Ready(Err(Error::other(format!("close error: {err}")))),
         }
     }
 }

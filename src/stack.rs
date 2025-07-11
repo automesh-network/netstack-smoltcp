@@ -227,7 +227,7 @@ impl Sink<AnyIpPktFrame> for Stack {
 
         use std::io::{Error, ErrorKind::InvalidInput};
         let packet = IpPacket::new_checked(item.as_slice())
-            .map_err(|err| Error::new(InvalidInput, format!("invalid IP packet: {}", err)))?;
+            .map_err(|err| Error::new(InvalidInput, format!("invalid IP packet: {err}")))?;
 
         let src_ip = packet.src_addr();
         let dst_ip = packet.dst_addr();
