@@ -1,5 +1,7 @@
 # Netstack Smoltcp
 
+> ⚠️ Archive, please go to https://github.com/cavivie/netstack-smoltcp instead!
+
 A netstack for the special purpose of turning packets from/to a TUN interface into TCP streams and UDP packets. It uses smoltcp-rs as the backend netstack.
 
 [![Crates.io][crates-badge]][crates-url]
